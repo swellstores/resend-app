@@ -1,0 +1,16 @@
+{
+  "description": "Send Swell email notifications through Resend",
+  "dependencies": {
+    "liquidjs": "^10.27.0"
+  },
+  "devDependencies": {
+    "@swell/app-types": "^1.0.5",
+    "typescript": "^5.9.3"
+  },
+  "name": "resend",
+  "private": true,
+  "scripts": {
+    "typecheck": "([ -z \"$(find functions -name '*.ts' 2>/dev/null | head -1)\" ] || tsc --noEmit) && ([ ! -f test/tsconfig.json ] || tsc --build --noEmit test) && ([ ! -f frontend/tsconfig.json ] || tsc --build --noEmit frontend)"
+  },
+  "version": "1.1.0"
+}

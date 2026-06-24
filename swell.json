@@ -1,0 +1,8 @@
+{
+	"description": "Send Swell email notifications through Resend",
+	"id": "resend",
+	"name": "resend",
+	"type": "integration",
+	"version": "1.1.0",
+	"permissions": []
+}

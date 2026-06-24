@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json.swell.store/setting.json",
+  "label": "Resend",
+  "description": "Send branded transactional emails through Resend by reusing your store's notification templates. Disable the matching native Swell notifications to avoid duplicate emails.",
+  "fields": [
+    {
+      "id": "api_key",
+      "label": "API Key",
+      "type": "text",
+      "description": "Resend API key (starts with 're_'). Found in Resend → API Keys. Requires 'Sending access'.",
+      "required": true
+    },
+    {
+      "id": "from_email",
+      "label": "From Address",
+      "type": "text",
+      "description": "Sender address. Must be on a domain verified in Resend, e.g. 'orders@yourstore.com'.",
+      "required": true
+    },
+    {
+      "id": "from_name",
+      "label": "From Name",
+      "type": "text",
+      "description": "Optional display name shown to recipients, e.g. 'Acme Store'."
+    },
+    {
+      "id": "reply_to",
+      "label": "Reply-To Address",
+      "type": "text",
+      "description": "Optional reply-to address for customer responses."
+    },
+    {
+      "id": "send_order_receipt",
+      "label": "Order confirmation (order.submitted → receipt)",
+      "type": "toggle",
+      "default": true
+    },
+    {
+      "id": "send_order_shipped",
+      "label": "Shipping confirmation (shipment.created → shipped)",
+      "type": "toggle",
+      "default": true
+    },
+    {
+      "id": "send_order_shipped_update",
+      "label": "Shipping update (shipment.updated → shipped-update)",
+      "type": "toggle",
+      "default": false
+    },
+    {
+      "id": "send_order_canceled",
+      "label": "Order canceled (order.canceled → canceled)",
+      "type": "toggle",
+      "default": false
+    },
+    {
+      "id": "send_order_refund",
+      "label": "Order refund (payment.refund.succeeded → refund)",
+      "type": "toggle",
+      "default": false
+    },
+    {
+      "id": "send_account_welcome",
+      "label": "Customer welcome (account.created → welcome)",
+      "type": "toggle",
+      "default": false
+    },
+    {
+      "id": "send_cart_recovery",
+      "label": "Abandoned cart recovery (cart.abandoned → recovery)",
+      "type": "toggle",
+      "default": false
+    },
+    {
+      "id": "send_subscription_new",
+      "label": "New subscription (subscription.activated → new)",
+      "type": "toggle",
+      "default": true
+    },
+    {
+      "id": "send_subscription_canceled",
+      "label": "Subscription canceled (subscription.canceled → canceled)",
+      "type": "toggle",
+      "default": false
+    },
+    {
+      "id": "send_subscription_paused",
+      "label": "Subscription paused (subscription.paused → paused)",
+      "type": "toggle",
+      "default": false
+    },
+    {
+      "id": "send_subscription_resumed",
+      "label": "Subscription resumed (subscription.resumed → resumed)",
+      "type": "toggle",
+      "default": false
+    },
+    {
+      "id": "send_subscription_invoice",
+      "label": "Subscription invoice (subscription.invoiced → invoice)",
+      "type": "toggle",
+      "default": false
+    },
+    {
+      "id": "custom_mappings",
+      "label": "Custom notifications",
+      "type": "collection",
+      "description": "Route additional notification templates through Resend. Each row sends the named template (its 'name' in Settings → Notifications) when the chosen event fires. The template must live on the same model as the event.",
+      "fields": [
+        {
+          "id": "event",
+          "label": "Trigger event",
+          "type": "select",
+          "required": true,
+          "options": [
+            { "label": "order.submitted", "value": "order.submitted" },
+            { "label": "order.paid", "value": "order.paid" },
+            { "label": "order.canceled", "value": "order.canceled" },
+            { "label": "order.delivered", "value": "order.delivered" },
+            { "label": "shipment.created", "value": "shipment.created" },
+            { "label": "shipment.updated", "value": "shipment.updated" },
+            { "label": "account.created", "value": "account.created" },
+            { "label": "cart.abandoned", "value": "cart.abandoned" },
+            { "label": "payment.refund.succeeded", "value": "payment.refund.succeeded" },
+            { "label": "subscription.created", "value": "subscription.created" },
+            { "label": "subscription.activated", "value": "subscription.activated" },
+            { "label": "subscription.paused", "value": "subscription.paused" },
+            { "label": "subscription.resumed", "value": "subscription.resumed" },
+            { "label": "subscription.canceled", "value": "subscription.canceled" },
+            { "label": "subscription.invoiced", "value": "subscription.invoiced" },
+            { "label": "subscription.paid", "value": "subscription.paid" },
+            { "label": "subscription.trial_will_end", "value": "subscription.trial_will_end" },
+            { "label": "subscription.trial_ended", "value": "subscription.trial_ended" }
+          ]
+        },
+        {
+          "id": "template",
+          "label": "Notification name",
+          "type": "text",
+          "required": true,
+          "description": "The notification 'name', e.g. 'invoice.v2'."
+        },
+        {
+          "id": "id_field",
+          "label": "Record ID field",
+          "type": "text",
+          "description": "Path on the event payload to the record id. Defaults to 'id'."
+        },
+        {
+          "id": "enabled",
+          "label": "Enabled",
+          "type": "toggle",
+          "default": true
+        }
+      ]
+    }
+  ]
+}
