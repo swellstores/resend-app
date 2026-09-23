@@ -1,8 +1,10 @@
 {
 	"description": "Send Swell email notifications through Resend",
 	"id": "resend",
-	"name": "resend",
+	"name": "Resend",
 	"type": "integration",
 	"version": "1.1.0",
-	"permissions": []
+	"permissions": [],
+	"support_email": "support@swell.is",
+	"full_description": "Resend sends your store’s transactional emails through your own Resend account, reusing the notification templates you already designed in Settings → Notifications. There is no second set of templates to build or keep in sync.\n\nWhen an event fires — an order is submitted, a shipment is created, a subscription is activated — the app fetches your live notification template, renders it with that record’s data, and delivers it through the Resend API. Because the template is read at send time, any edit you make in the dashboard shows up in the next email automatically.\n\nTwelve standard notifications are supported out of the box, each with its own on/off toggle: order confirmation, order canceled, refund, shipping confirmation, shipping update, customer welcome, abandoned cart recovery, and five subscription emails. Anything else can be routed with the Custom notifications setting — choose an event, name a template, and it sends, with no code change.\n\nSetup is two fields: your Resend API key and a sender address on a domain you have verified in Resend. An optional display name and reply-to address are also supported.\n\nThis app sends in addition to Swell’s native notifications rather than replacing them, so for each notification you enable here, disable the matching native email to avoid sending customers two copies."
 }
