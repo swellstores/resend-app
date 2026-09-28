@@ -34,14 +34,28 @@ maps cleanly to a single model **event** is covered, gated by its own settings t
 | `shipment.updated` | `shipped-update.v2` | `send_order_shipped_update` | off |
 | `account.created` | `welcome.v2` | `send_account_welcome` | off |
 | `cart.abandoned` | `recovery.v2` | `send_cart_recovery` | off |
-| `subscription.activated` | `new.v2` | `send_subscription_new` | on |
+| `subscription.created` (active only) | `new.v2` | `send_subscription_new` | on |
 | `subscription.canceled` | `canceled.v2` (subs) | `send_subscription_canceled` | off |
 | `subscription.paused` | `paused.v2` | `send_subscription_paused` | off |
 | `subscription.resumed` | `resumed.v2` | `send_subscription_resumed` | off |
 | `subscription.invoiced` | `invoice.v2` (subs) | `send_subscription_invoice` | off |
 
 Shipment/refund emails are modeled on the order; those events carry `order_id` and the record is
-loaded from `orders`. Template names are **not unique across models** (e.g. `canceled.v2`,
+loaded from `orders`.
+
+Each built-in mapping also carries the native send rules its event alone doesn't express, and the
+data native hands the template through `$notify.data` (both read from schema-api-server's
+`api/com/notifications/**.json` and the features that raise `$notify`):
+
+| Template | Extra rule / data |
+| --- | --- |
+| `receipt.v2` | skipped for drafts and orders with `notify: false` |
+| `refund.v2` | `refunds` — every refund on the order (`amount`, `reason`, `reason_message`) |
+| `shipped.v2`, `shipped-update.v2` | `shipment` — the shipment that raised the event, items expanded |
+| `welcome.v2` | skipped for guest accounts (queried with `password: {$exists: true}`) |
+| `new.v2` | sent on `subscription.created` when the subscription is active — native's `new: true` never re-sends on reactivation |
+| `paused.v2`, `resumed.v2` | skipped when the subscription is canceled |
+| `invoice.v2` | skipped when `grand_total` is 0; `invoice` — the subscription's latest invoice | Template names are **not unique across models** (e.g. `canceled.v2`,
 `invoice.v2`), so configs are always looked up by **name + model**.
 
 ### Not auto-mapped
@@ -102,33 +116,41 @@ the table above (`send_*`), and the **Custom notifications** collection (`custom
 
 ## Avoiding duplicate emails
 
-This app sends **in addition to** Swell's native notifications. For each event you enable here,
-disable the corresponding notification in **Settings → Notifications** (or turn off Swell's default
-email delivery) so customers don't receive two copies.
+A built-in mapping only sends while the matching native notification is **disabled** in
+**Settings → Notifications**. Swell skips a notification whose `enabled` is `false` and sends it
+otherwise (`null` is the default, which is on), so the app checks the same field at send time and
+logs `skipped: Swell's native "<label>" email is still on` instead of sending a second copy.
+Switching a notification over is one step: turn the native one off. Custom mappings aren't
+checked — they name the merchant's own templates.
+
+Each send carries a Resend `Idempotency-Key` derived from the event, so a redelivered event returns
+the original email instead of sending another.
 
 ## Limitations
 
 These are inherent to the approach, not bugs — they're documented here so anyone building on this
 version knows exactly where the edges are.
 
-- **Runs alongside native delivery.** The app sends its own emails in addition to Swell's; it
-  doesn't intercept Swell's own notifications, so you must disable the matching native ones
-  yourself (see above) to avoid duplicate emails.
+- **The admin's per-shipment "notify customer" checkbox isn't visible to apps.** Native passes it
+  as `$notify` on the write, which never reaches the event payload. Once native `shipped.v2` is
+  off, the app sends a shipping confirmation for every shipment.
+- **Welcome covers account creation only.** Native also welcomes a guest who later sets a
+  password; the app subscribes to `account.created`, not updates.
 - **Only event-backed notifications are covered.** Notifications triggered by manual actions, record
   conditions, schedules, or delays have no business event to subscribe to — password reset, customer
   invite, draft-order invoice, the dunning series, payment-expiring, and the abandoned-cart
   *follow-up* series (recovery-1/2). These stay on Swell's native delivery. See *Not auto-mapped*.
 - **Some subscribed events have no default mapping.** The order and subscription handlers subscribe
-  to a few extra events (`order.paid`, `order.delivered`, `subscription.created`,
+  to a few extra events (`order.paid`, `order.delivered`, `subscription.activated`,
   `subscription.paid`, `subscription.trial_will_end`, `subscription.trial_ended`) so they can be
   targeted via **Custom notifications** without a code change. By default they fire and no-op.
-- **No de-duplication.** If Swell delivers the same event more than once, the customer receives more
-  than one email — there's no idempotency key or send log. In practice events fire once per record
-  transition, but a retry will resend.
+- **De-duplication lasts 24 hours.** That is how long Resend keeps an idempotency key. Swell
+  retries a failed event for up to four days, so a retry after a day could send again.
 - **Custom mappings are same-model only.** A custom row assumes the template lives on the same model
   as its event. Cross-model routing (like shipment→order) requires a registry entry in code.
-- **Inline rendering, no queue/retry.** Emails render and send synchronously inside the event
-  handler. A Resend outage means that send is lost (the error is logged, not retried).
+- **Inline rendering; Swell does the retrying.** Emails render and send inside the event handler.
+  A network error, 429 or 5xx is rethrown so Swell redelivers the event; any other Resend 4xx (bad
+  key, unverified domain) is thrown with `retry: false`, so it's recorded as failed and not retried.
 - **Liquid parity is partial.** Only the `currency` and `img_url` Swell filters are reimplemented
   (`functions/lib/render.ts`). Templates relying on other Swell-specific filters may not render
   identically — add the filter there if you hit one.

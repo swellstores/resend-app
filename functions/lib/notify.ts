@@ -17,18 +17,33 @@ async function fetchNotificationConfig(
   return res?.results?.[0] ?? null;
 }
 
-// Render a Swell notification template for one mapping and deliver it via Resend
+// Render a Swell notification template for one mapping and deliver it via Resend.
+// `event` is the raw event payload; `idempotencyKey` makes a redelivered event
+// resolve to the same Resend email instead of a second one.
 export async function sendForMapping(
   swell: SwellAPI,
   reqStore: SwellStore,
   settings: ResendSettings,
   mapping: Mapping,
   recordId: string,
+  event: SwellData,
+  idempotencyKey: string,
 ): Promise<void> {
   const config = await fetchNotificationConfig(swell, mapping.templateName, mapping.templateModel);
   if (!config) {
     console.error(
       `Resend: template "${mapping.templateName}" (${mapping.templateModel}) not found in store`,
+    );
+    return;
+  }
+
+  // Swell skips a notification whose `enabled` is false and sends it otherwise
+  // (null means "default", which is on). While native is on, it already sends
+  // this email, so sending it here too would give the customer two copies.
+  if (mapping.replacesNative && config.enabled !== false) {
+    console.log(
+      `Resend: ${mapping.label} skipped: Swell's native "${config.label ?? mapping.templateName}" email is still on. ` +
+        'Turn it off in Settings > Notifications to send it through Resend instead.',
     );
     return;
   }
@@ -41,7 +56,15 @@ export async function sendForMapping(
     return;
   }
 
-  const email = await renderNotification(swell, reqStore, config, record);
+  const ctx = { swell, event, record };
+  const skipReason = mapping.skip ? await mapping.skip(ctx) : null;
+  if (skipReason) {
+    console.log(`Resend: ${mapping.label} skipped: ${skipReason}`);
+    return;
+  }
+  const extra = mapping.extraData ? await mapping.extraData(ctx) : {};
+
+  const email = await renderNotification(swell, reqStore, config, { ...record, ...extra });
   if (!email) {
     return;
   }
@@ -50,6 +73,11 @@ export async function sendForMapping(
     return;
   }
 
-  await sendEmail(settings, { to: [email.to], subject: email.subject, html: email.html });
+  await sendEmail(settings, {
+    to: [email.to],
+    subject: email.subject,
+    html: email.html,
+    idempotencyKey,
+  });
   console.log(`Resend: ${mapping.label} -> ${email.to}`);
 }

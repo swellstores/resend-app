@@ -43,6 +43,7 @@ function parseCustomMappings(settings: ResendSettings): Mapping[] {
       settingKey: '', // custom rows are gated by their own `enabled` flag
       defaultOn: true,
       label: `custom:${row.template}`,
+      replacesNative: false,
     });
   }
   return mappings;
@@ -76,6 +77,7 @@ export async function dispatch(
     (m) => m.event === eventType,
   );
 
+  const failures: unknown[] = [];
   for (const mapping of mappings) {
     if (!isEnabled(mapping, settings)) {
       continue;
@@ -86,11 +88,30 @@ export async function dispatch(
       continue;
     }
     try {
-      await sendForMapping(swell, reqStore, settings, mapping, recordId);
+      await sendForMapping(swell, reqStore, settings, mapping, recordId, data, idempotencyKey(eventType, data, mapping));
     } catch (err) {
       console.error(`Resend: failed sending "${mapping.label}":`, err);
+      failures.push(err);
     }
   }
+
+  // Rethrow so Swell records the failed delivery. If any failure is transient,
+  // Swell redelivers the whole event; mappings that already sent are safe
+  // because their idempotency key returns the original email.
+  if (failures.length) {
+    const retryable = failures.find((err) => {
+      const status = (err as any)?.status;
+      return typeof status !== 'number' || status === 429 || status >= 500;
+    });
+    throw retryable ?? failures[0];
+  }
+}
+
+// Stable across redeliveries of one event, different for each email it sends.
+// Payloads are re-fetched at delivery, so prefer the event id over record state.
+function idempotencyKey(eventType: string, data: SwellData, mapping: Mapping): string {
+  const occurrence = data.$event?.id ?? `${data.id}:${data.date_updated ?? ''}`;
+  return `swell-resend/${eventType}/${occurrence}/${mapping.templateModel}.${mapping.templateName}`;
 }
 
 // Shared entrypoint for every event-handler function in this app

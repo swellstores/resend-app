@@ -15,6 +15,9 @@ export interface ResendEmail {
   to: string[];
   subject: string;
   html: string;
+  // Resend returns the original email for a repeated key (kept for 24 hours),
+  // so a redelivered Swell event can't send a second copy.
+  idempotencyKey?: string;
 }
 
 // Format a sender as "Name <email>" when a display name is configured
@@ -37,25 +40,32 @@ export async function sendEmail(
     payload.reply_to = [settings.reply_to];
   }
 
+  let res: Response;
   try {
-    const res = await fetch(`${API_BASE}/emails`, {
+    res = await fetch(`${API_BASE}/emails`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${settings.api_key}`,
         'content-type': 'application/json',
+        ...(email.idempotencyKey ? { 'Idempotency-Key': email.idempotencyKey.slice(0, 256) } : {}),
       },
       body: JSON.stringify(payload),
     });
-
-    if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`${res.status}: ${body}`);
-    }
-
-    const result = (await res.json()) as { id?: string };
-    console.log(`Resend: sent "${email.subject}" to ${email.to.join(', ')} (id: ${result.id})`);
   } catch (err) {
-    console.error('Resend send error:', err);
-    throw err;
+    // Network failure: let Swell redeliver the event
+    throw new SwellError(`Resend unreachable: ${err instanceof Error ? err.message : String(err)}`, {
+      status: 502,
+    });
   }
+
+  if (!res.ok) {
+    const body = await res.text();
+    // 429 and 5xx are transient, so Swell should retry. Any other 4xx (bad key,
+    // unverified domain, invalid address) fails the same way on every retry.
+    const retry = res.status === 429 || res.status >= 500;
+    throw new SwellError(`Resend ${res.status}: ${body}`, { status: res.status, retry });
+  }
+
+  const result = (await res.json()) as { id?: string };
+  console.log(`Resend: sent "${email.subject}" to ${email.to.join(', ')} (id: ${result.id})`);
 }

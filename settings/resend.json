@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.swell.store/setting.json",
   "label": "Resend",
-  "description": "Send branded transactional emails through Resend by reusing your store's notification templates. Disable the matching native Swell notifications to avoid duplicate emails.",
+  "description": "Send branded transactional emails through Resend by reusing your store's notification templates. Each notification sends through Resend once you turn off Swell's own version of it in Settings → Notifications.",
   "fields": [
     {
       "id": "api_key",
@@ -73,7 +73,7 @@
     },
     {
       "id": "send_subscription_new",
-      "label": "New subscription (subscription.activated → new)",
+      "label": "New subscription (subscription.created → new)",
       "type": "toggle",
       "default": true
     },

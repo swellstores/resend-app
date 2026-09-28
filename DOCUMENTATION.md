@@ -24,10 +24,10 @@ every send lands in your Resend dashboard with its own delivery, bounce, and
 open data. You get Resend's deliverability tooling and logs without rebuilding
 your templates.
 
-> **Important:** this app sends *in addition to* Swell's native notifications.
-> It does not replace or intercept them. Read
-> [Avoiding duplicate emails](#avoiding-duplicate-emails) before you turn
-> anything on — three notifications send by default.
+> **Important:** a notification only sends through Resend once you turn off
+> Swell's own version of it in **Settings → Notifications**. Until then, Swell
+> keeps sending it and the app stays out of the way. See
+> [Avoiding duplicate emails](#avoiding-duplicate-emails).
 
 ---
 
@@ -73,7 +73,7 @@ own toggle, so you can move them over one at a time rather than all at once.
 | --- | --- | --- | --- |
 | Order confirmation | `order.submitted` | `receipt.v2` | **On** |
 | Shipping confirmation | `shipment.created` | `shipped.v2` | **On** |
-| New subscription | `subscription.activated` | `new.v2` | **On** |
+| New subscription | `subscription.created` | `new.v2` | **On** |
 | Shipping update | `shipment.updated` | `shipped-update.v2` | Off |
 | Order canceled | `order.canceled` | `canceled.v2` | Off |
 | Order refund | `payment.refund.succeeded` | `refund.v2` | Off |
@@ -171,28 +171,30 @@ routing requires a code change.
 
 ## Avoiding duplicate emails
 
-**This is the one thing to get right.**
+The app never sends a notification that Swell is also sending. Before each
+email, it checks whether Swell's own version is still on in
+**Settings → Notifications**. If it is, the app skips the email and logs why.
 
-The app sends *alongside* Swell's native notifications. It does not turn them
-off, and it cannot detect that Swell already sent one. If a notification is
-enabled in **both** places, your customer receives **two copies**.
-
-Three notifications are **on by default** the moment you supply an API key and
-From Address:
-
-- Order confirmation
-- Shipping confirmation
-- New subscription
+So switching a notification to Resend is one step: **turn off Swell's version
+of it.** The app's toggle for it must also be on — three are on by default:
+order confirmation, shipping confirmation and new subscription.
 
 **Recommended rollout:**
 
-1. Enter your API key and From Address.
-2. Immediately turn off the three defaults above if you are not ready for them.
-3. Move one notification at a time: disable the matching native notification in
-   **Settings → Notifications**, then enable its toggle here.
-4. Place a test order and confirm exactly one email arrives, and that it
+1. Enter your API key and From Address. Nothing changes yet — Swell is still
+   sending every notification.
+2. Turn off one native notification in **Settings → Notifications**, for
+   example the order receipt.
+3. Place a test order and confirm exactly one email arrives, and that it
    appears in your Resend dashboard.
-5. Repeat for the next notification.
+4. Repeat for the next notification.
+
+The same email is never sent twice for one event, even if Swell delivers the
+event again: each send carries an idempotency key, which Resend honours for 24
+hours.
+
+Custom notifications are not checked this way. They route your own templates,
+so turning Swell's copy off is up to you.
 
 ---
 
@@ -201,17 +203,21 @@ From Address:
 These are properties of how the app works, not defects. They are listed so you
 can decide whether they matter for your store.
 
-- **It adds delivery, it does not replace it.** Swell's own notifications keep
-  sending unless you disable them yourself.
+- **Shipping confirmations ignore the "notify customer" checkbox.** When you
+  create a shipment in the dashboard, Swell doesn't pass that checkbox on to
+  apps. Once Swell's own shipping confirmation is off, the app sends one for
+  every shipment.
+- **Welcome emails go out when an account is created.** A guest who later sets
+  a password doesn't get one.
 - **Only event-backed notifications can be covered.** Anything triggered by a
   manual action, a record condition, a schedule, or a delay is out of reach —
   see [What is not covered](#what-is-not-covered).
-- **No de-duplication.** There is no idempotency key and no send log. If Swell
-  delivers the same event twice, two emails go out. In normal operation events
-  fire once per record transition, but a retry will resend.
-- **No queue and no retry.** Emails render and send inline. If the Resend API
-  is down or rejects the request, that email is lost — the failure is logged,
-  not retried. Nothing else breaks; the next event sends normally.
+- **Duplicate protection lasts 24 hours.** If Swell redelivers an event more
+  than a day after the first attempt, a second email can go out.
+- **Retries depend on the failure.** If Resend is unreachable, rate-limited, or
+  returns a server error, Swell tries the event again later. If Resend rejects
+  the request (a bad key or an unverified domain), the failure is logged and
+  not retried — fix the setting and later emails send normally.
 - **Custom rows are same-model only.** See
   [the rule above](#one-rule-that-catches-people-out).
 - **Partial Liquid filter coverage.** Only `currency` and `img_url` are
@@ -248,16 +254,23 @@ If no email arrived, find the matching line below.
 | `<event> has no "<field>", skipping <label>` | The event payload had no id at the expected path. For custom rows this is usually a wrong **Record ID field**. | Leave Record ID field blank to use `id`, or set the correct path. |
 | `custom mapping has unrecognized event "<event>"` | A custom row's event is not one the app knows. | Re-pick the event from the dropdown. |
 | `failed rendering field "<id>"` | A content label contains invalid Liquid. That label renders empty; the email still sends. | Fix the label in the notification's content fields. |
-| `Resend send error: 401` | Resend rejected the API key. | Regenerate the key in Resend and confirm it has Sending access. |
-| `Resend send error: 403` | Usually an unverified sender domain. | Verify the From Address domain in Resend. |
-| `Resend send error: 422` | Resend rejected the payload, most often the `from` address. | Check the From Address is a valid address on a verified domain. |
+| `skipped: Swell's native "<label>" email is still on` | Swell is still sending this notification itself, so the app didn't. | Turn it off in Settings → Notifications to send it through Resend. |
+| `skipped: order is a draft` / `order has notify: false` | Swell wouldn't send a receipt for this order either. | Nothing to fix. |
+| `skipped: guest account (no password)` | Welcome emails only go to customers who created an account. | Nothing to fix. |
+| `skipped: subscription is not active` / `is canceled` | Swell's rules for this subscription email weren't met. | Nothing to fix. |
+| `skipped: nothing to invoice (grand_total is 0)` | Free invoices don't get an email, in Swell or here. | Nothing to fix. |
+| `Resend 401: …` | Resend rejected the API key. | Regenerate the key in Resend and confirm it has Sending access. |
+| `Resend 403: …` | Usually an unverified sender domain. | Verify the From Address domain in Resend. |
+| `Resend 422: …` | Resend rejected the payload, most often the `from` address. | Check the From Address is a valid address on a verified domain. |
+| `Resend 429: …` / `Resend 5xx: …` / `Resend unreachable` | A temporary Resend problem. | Nothing to fix — Swell retries the event. |
 
 **If nothing is logged at all** for an event, the notification's toggle is off,
 or the event did not fire. Confirm the toggle, then confirm the event by
 checking whether Swell's own notification for it went out.
 
 A failure in one email never stops the others: each is attempted
-independently, and a failure is logged and skipped.
+independently, then the failure is reported to Swell so the event shows as
+failed (and is retried when the failure is temporary).
 
 ---
 

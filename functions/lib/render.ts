@@ -2,11 +2,22 @@
 // which the Swell function isolate doesn't provide ("require is not defined").
 import { Liquid } from 'liquidjs/dist/liquid.browser.mjs';
 
+type LocaleValues<T> = Record<string, Partial<T> | undefined>;
+
 export interface NotificationConfig {
   name: string;
+  label?: string;
+  // false = the merchant turned the native email off; null/undefined = on
+  enabled?: boolean | null;
   subject?: string;
   contact?: string; // dot path to recipient, e.g. "account.email"
-  fields?: Array<{ id: string; value?: string; default?: string }>;
+  fields?: Array<{
+    id: string;
+    value?: string;
+    default?: string;
+    $locale?: LocaleValues<{ value: string }>;
+  }>;
+  $locale?: LocaleValues<{ subject: string }>;
   query?: { expand?: string[] };
   content?: { html?: { url?: string } };
 }
@@ -19,25 +30,56 @@ export interface RenderedEmail {
 
 const engine = new Liquid();
 
-// Swell's `currency` filter: format a number as money using the record's currency.
-// `{{ item.price | currency }}` -> "$10.00"
+// Swell's `currency` filter: format a number as money in the record's currency
+// and locale. `{{ item.price | currency }}` -> "$10.00"
 engine.registerFilter('currency', function (this: any, value: unknown) {
   const num = Number(value);
   if (!isFinite(num)) {
     return value ?? '';
   }
   let code = 'USD';
+  let locale = 'en-US';
   try {
     code = (this?.context?.getSync(['currency']) as string) || 'USD';
+    locale = (this?.context?.getSync(['$locale']) as string) || 'en-US';
   } catch {
-    // fall back to USD
+    // fall back to USD / en-US
   }
   try {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: code }).format(num);
+    return new Intl.NumberFormat(locale, { style: 'currency', currency: code }).format(num);
   } catch {
-    return `${code} ${num.toFixed(2)}`;
+    try {
+      return new Intl.NumberFormat('en-US', { style: 'currency', currency: code }).format(num);
+    } catch {
+      return `${code} ${num.toFixed(2)}`;
+    }
   }
 });
+
+// The locale native picks for a notification: the contact's (the account on
+// most templates), then the record's own. Same order as schema-api-server.
+function recordLocale(record: any, contact?: string): string | undefined {
+  const pointerPath = contact?.split('.').slice(0, -1).join('.');
+  const pointer = pointerPath ? getPointer(record, pointerPath) : record;
+  return (
+    pointer?.locale ||
+    pointer?.display_locale ||
+    record?.locale ||
+    record?.display_locale ||
+    undefined
+  );
+}
+
+function getPointer(record: any, path: string): any {
+  return path.split('.').reduce((acc, key) => (acc == null ? acc : acc[key]), record);
+}
+
+// Pick a merchant translation from a `$locale` map: exact locale, then language.
+function localized<T>(values: LocaleValues<T> | undefined, locale: string | undefined, key: keyof T) {
+  if (!values || !locale) return undefined;
+  const hit = values[locale]?.[key] ?? values[locale.split('-')[0]]?.[key];
+  return typeof hit === 'string' && hit.length > 0 ? hit : undefined;
+}
 
 // Resolve a usable image URL from the many shapes Swell passes to `img_url`
 // (a file object, an image record, or a product/variant with an images array).
@@ -90,12 +132,13 @@ async function buildStore(swell: SwellAPI, reqStore: SwellStore): Promise<Record
 async function renderFields(
   fields: NotificationConfig['fields'],
   baseContext: Record<string, unknown>,
+  locale: string | undefined,
 ): Promise<Record<string, string>> {
   const content: Record<string, string> = {};
   if (!fields?.length) return content;
 
   for (const field of fields) {
-    const template = field.value ?? field.default ?? '';
+    const template = localized(field.$locale, locale, 'value') ?? field.value ?? field.default ?? '';
     try {
       content[field.id] = await engine.parseAndRender(template, baseContext);
     } catch (err) {
@@ -127,12 +170,19 @@ export async function renderNotification(
   const html = await tplRes.text();
 
   const store = await buildStore(swell, reqStore);
-  const baseContext = { ...record, store };
-  const content = await renderFields(config.fields, baseContext);
+  const locale = recordLocale(record, config.contact);
+  const baseContext = {
+    ...record,
+    currency: record.currency ?? record.account?.currency,
+    store,
+    $locale: locale,
+  };
+  const content = await renderFields(config.fields, baseContext, locale);
   const context = { ...baseContext, content };
+  const subjectTemplate = localized(config.$locale, locale, 'subject') ?? config.subject ?? '';
 
   const [subject, body] = await Promise.all([
-    engine.parseAndRender(config.subject ?? '', context),
+    engine.parseAndRender(subjectTemplate, context),
     engine.parseAndRender(html, context),
   ]);
 
