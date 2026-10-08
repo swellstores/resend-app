@@ -6,7 +6,7 @@
     {
       "id": "api_key",
       "label": "API Key",
-      "type": "text",
+      "type": "secret",
       "description": "Resend API key (starts with 're_'). Found in Resend → API Keys. Requires 'Sending access'.",
       "required": true
     },

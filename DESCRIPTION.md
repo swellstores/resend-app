@@ -1,9 +1,12 @@
-Resend sends your store’s transactional emails through your own Resend account, reusing the notification templates you already designed in Settings → Notifications. There is no second set of templates to build or keep in sync.
+Send your store's order, customer and subscription emails through your own Resend account, from an address on your own domain. The app uses the notification templates you already have in Swell, so there's no second set of templates to keep up to date.
 
-When an event fires — an order is submitted, a shipment is created, a subscription starts — the app fetches your live notification template, renders it with that record’s data, and delivers it through the Resend API. Because the template is read at send time, any edit you make in the dashboard shows up in the next email automatically.
+Turn on the emails you want Resend to send, then turn off Swell's own version of each one. The app checks Swell's version before every send, so a customer never gets both, and you can switch one email at a time.
 
-Twelve standard notifications are supported out of the box, each with its own on/off toggle: order confirmation, order canceled, refund, shipping confirmation, shipping update, customer welcome, abandoned cart recovery, and five subscription emails. Anything else can be routed with the Custom notifications setting — choose an event, name a template, and it sends, with no code change.
+- **Your templates, as they are.** Each email uses the subject, content and template from Settings > Notifications, read when the email is sent, so your edits show up in the next one.
+- **Order and customer emails.** Order confirmation, order canceled, order refund and customer welcome, each with its own switch.
+- **Subscription emails.** New subscription, subscription canceled, paused, resumed and invoice.
+- **Your own notifications too.** Custom notifications sends an order, cart, customer or subscription notification on an event you choose, such as an order being paid or a subscription trial ending.
+- **One email per event.** When Swell delivers an event again within 24 hours, Resend returns the email already sent instead of sending another.
+- **Every send in your logs.** Each email the app sends or skips, and each Resend error, is logged in the Swell console.
 
-Setup is two fields: your Resend API key and a sender address on a domain you have verified in Resend. An optional display name and reply-to address are also supported.
-
-Customers never get two copies: a notification only sends through Resend once you turn off Swell’s own version of it, so you can switch over one email at a time.
+Setup takes a few minutes once your domain is verified in Resend. Create an API key with Sending access, and enter it and your From Address in the app settings. Turn on the emails you want, turn off Swell's version of each in Settings > Notifications, and place a test order.

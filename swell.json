@@ -6,24 +6,26 @@
 	"version": "1.2.0",
 	"permissions": [],
 	"support_email": "support@swell.is",
+	"documentation_url": "https://developers.swell.is/app-guides/resend",
+	"price_external": true,
 	"images": [
 		{
 			"id": "setup",
-			"image_src": "assets/screenshots/resend-setup.png",
+			"image_src": "assets/images/1-setup.png",
 			"title": "Connect your Resend account",
-			"description": "Add your API key and verified sender address, then switch notifications over one at a time."
+			"description": "Add your API key and a sender address on your verified domain, then switch notifications over one at a time."
 		},
 		{
 			"id": "notifications",
-			"image_src": "assets/screenshots/resend-notifications.png",
-			"title": "Twelve notifications, each a toggle",
-			"description": "Order, shipping, refund, customer and subscription emails - turn on only the ones you want Resend to send."
+			"image_src": "assets/images/2-notifications.png",
+			"title": "Choose the emails Resend sends",
+			"description": "Order, refund, customer and subscription emails, each with its own switch. Turn on only the ones you want Resend to send."
 		},
 		{
 			"id": "custom",
-			"image_src": "assets/screenshots/resend-custom-notifications.png",
+			"image_src": "assets/images/3-custom.png",
 			"title": "Route your own templates",
-			"description": "Pick any supported event and name one of your own notification templates - no code change needed."
+			"description": "Pick a supported event and name one of your own notification templates. No code changes needed."
 		}
 	]
 }
