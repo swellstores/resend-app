@@ -3,7 +3,7 @@
 	"id": "resend",
 	"name": "Resend",
 	"type": "integration",
-	"version": "1.2.0",
+	"version": "1.2.1",
 	"permissions": [],
 	"support_email": "support@swell.is",
 	"documentation_url": "https://developers.swell.is/app-guides/resend",
