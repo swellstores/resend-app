@@ -17,6 +17,13 @@ export interface Mapping {
   // Built-in mappings stand in for a native Swell notification, so they only
   // send while that native notification is disabled. Custom mappings don't.
   replacesNative: boolean;
+  // Whether native would send this email, when that takes more than the
+  // notification's own `enabled` flag (the default check). Only consulted
+  // when replacesNative is true.
+  nativeEnabled?: (swell: SwellAPI, config: { enabled?: boolean | null }) => Promise<boolean>;
+  // What the merchant does to switch native off, for the skip log line.
+  // Defaults to turning it off in Settings > Notifications.
+  nativeOffHint?: string;
   // Native send rules that an event alone doesn't express. Returns a reason to
   // skip, or null to send.
   skip?: (ctx: MappingContext) => Promise<string | null> | string | null;
@@ -67,6 +74,20 @@ async function latestInvoice({ swell, record }: MappingContext) {
   return invoice ? { invoice } : {};
 }
 
+// orders.shipped and orders.shipped-update have no switch in Settings >
+// Notifications (swell-admin hardcodes `enabled: true` for both), so the only
+// way to turn native off is to set `enabled: false` on the notification
+// through the API. schema-api-server honours that like any other notification.
+const NO_DASHBOARD_SWITCH =
+  "Swell's dashboard has no switch for it; set enabled: false on the notification through the API " +
+  "to send it through Resend instead (see the app guide).";
+
+// Native only sends for confirmed shipments: a draft shipment never reaches
+// the order (shipments feature, update_order_delivered).
+function draftShipment({ event }: MappingContext): string | null {
+  return event?.draft === true ? 'shipment is a draft' : null;
+}
+
 // lodash's capitalize(words(reason)), which native uses for reason_message
 function humanize(value?: string): string {
   if (!value) return '';
@@ -101,11 +122,24 @@ export const DEFAULT_MAPPINGS: Mapping[] = [
   {
     event: 'shipment.created', templateName: 'shipped.v2', templateModel: 'orders', recordModel: 'orders', idFrom: 'order_id',
     settingKey: 'send_order_shipped', defaultOn: true, label: 'Shipping confirmation', replacesNative: true,
+    nativeOffHint: NO_DASHBOARD_SWITCH,
+    skip: draftShipment,
     extraData: eventShipment,
   },
   {
     event: 'shipment.updated', templateName: 'shipped-update.v2', templateModel: 'orders', recordModel: 'orders', idFrom: 'order_id',
     settingKey: 'send_order_shipped_update', defaultOn: false, label: 'Shipping update', replacesNative: true,
+    nativeOffHint: NO_DASHBOARD_SWITCH,
+    // shipment.updated fires on any change to the shipment. The dashboard
+    // describes this email as "sent when a fulfillment tracking number is
+    // updated", so only send when this update set a tracking number. An
+    // updated event's `data` holds just the fields that changed.
+    skip: (ctx) => {
+      const draft = draftShipment(ctx);
+      if (draft) return draft;
+      const changed = ctx.event?.$event?.data;
+      return changed?.tracking_code ? null : 'tracking number did not change';
+    },
     extraData: eventShipment,
   },
   // Accounts
@@ -128,6 +162,23 @@ export const DEFAULT_MAPPINGS: Mapping[] = [
   {
     event: 'cart.abandoned', templateName: 'recovery.v2', templateModel: 'carts', recordModel: 'carts', idFrom: 'id',
     settingKey: 'send_cart_recovery', defaultOn: false, label: 'Abandoned cart recovery', replacesNative: true,
+    // Native sends recovery only while the Abandoned cart switch is on, and
+    // that switch is `abandoned_cart.enabled` in /settings/notifications, not
+    // the notification's own `enabled` (which the dashboard never turns off).
+    // The notification's flag still blocks the send if it's false.
+    nativeEnabled: async (swell, config) => {
+      if (config.enabled === false) return false;
+      const settings = await swell.get('/settings/notifications');
+      return settings?.abandoned_cart?.enabled === true;
+    },
+    nativeOffHint: 'Turn off Abandoned cart in Settings > Notifications to send it through Resend instead.',
+    // Native only emails carts with a customer account and items in them
+    skip: ({ record }) =>
+      !record.account_id
+        ? 'cart has no customer account'
+        : !Array.isArray(record.items) || record.items.length === 0
+          ? 'cart is empty'
+          : null,
   },
   // Subscriptions
   {

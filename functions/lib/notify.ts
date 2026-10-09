@@ -40,12 +40,19 @@ export async function sendForMapping(
   // Swell skips a notification whose `enabled` is false and sends it otherwise
   // (null means "default", which is on). While native is on, it already sends
   // this email, so sending it here too would give the customer two copies.
-  if (mapping.replacesNative && config.enabled !== false) {
-    console.log(
-      `Resend: ${mapping.label} skipped: Swell's native "${config.label ?? mapping.templateName}" email is still on. ` +
-        'Turn it off in Settings > Notifications to send it through Resend instead.',
-    );
-    return;
+  // Some notifications have a different native switch (see registry.ts).
+  if (mapping.replacesNative) {
+    const nativeOn = mapping.nativeEnabled
+      ? await mapping.nativeEnabled(swell, config)
+      : config.enabled !== false;
+    if (nativeOn) {
+      console.log(
+        `Resend: ${mapping.label} skipped: Swell's native "${config.label ?? mapping.templateName}" email is still on. ` +
+          (mapping.nativeOffHint ??
+            'Turn it off in Settings > Notifications to send it through Resend instead.'),
+      );
+      return;
+    }
   }
 
   // Load the record with exactly the expansions the template was built for

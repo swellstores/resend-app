@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.swell.store/setting.json",
   "label": "Resend",
-  "description": "Send branded transactional emails through Resend by reusing your store's notification templates. Each notification sends through Resend once you turn off Swell's own version of it in Settings → Notifications.",
+  "description": "Send branded transactional emails through Resend by reusing your store's notification templates. Each notification sends through Resend once Swell's own version of it is off: most in Settings → Notifications, abandoned cart with its Abandoned cart switch there, and the two shipping emails through the Swell API (see the app guide).",
   "fields": [
     {
       "id": "api_key",
@@ -43,7 +43,7 @@
     },
     {
       "id": "send_order_shipped_update",
-      "label": "Shipping update (shipment.updated → shipped-update)",
+      "label": "Shipping update (shipment.updated with a new tracking number → shipped-update)",
       "type": "toggle",
       "default": false
     },
