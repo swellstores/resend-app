@@ -51,11 +51,15 @@ data native hands the template through `$notify.data` (both read from schema-api
 | --- | --- |
 | `receipt.v2` | skipped for drafts and orders with `notify: false` |
 | `refund.v2` | `refunds` — every refund on the order (`amount`, `reason`, `reason_message`) |
-| `shipped.v2`, `shipped-update.v2` | `shipment` — the shipment that raised the event, items expanded |
+| `shipped.v2`, `shipped-update.v2` | `shipment` — the shipment that raised the event, items expanded; skipped for draft shipments |
+| `shipped-update.v2` | sent only when the update set a tracking number (`tracking_code` in the event's changed `data`) |
+| `recovery.v2` | skipped for carts with no `account_id` or no items |
 | `welcome.v2` | skipped for guest accounts (queried with `password: {$exists: true}`) |
 | `new.v2` | sent on `subscription.created` when the subscription is active — native's `new: true` never re-sends on reactivation |
 | `paused.v2`, `resumed.v2` | skipped when the subscription is canceled |
-| `invoice.v2` | skipped when `grand_total` is 0; `invoice` — the subscription's latest invoice | Template names are **not unique across models** (e.g. `canceled.v2`,
+| `invoice.v2` | skipped when `grand_total` is 0; `invoice` — the subscription's latest invoice |
+
+Template names are **not unique across models** (e.g. `canceled.v2`,
 `invoice.v2`), so configs are always looked up by **name + model**.
 
 ### Not auto-mapped
@@ -91,8 +95,28 @@ list, add it to the relevant handler's `model.events` in `functions/*-emails.ts`
   - `currency` — formats a number as money via `Intl.NumberFormat` using the record's `currency`
   - `img_url` — resolves an image-bearing value to a CDN URL and appends transform params
 - The render context is `{ ...order, store, content }`, where `store` merges `/settings/store`
-  with notification branding (`/settings/notifications`) and `content` holds the rendered
+  with notification branding (`/settings/notifications`: `logo`, `logo_width`, `footer`, and
+  `color` from `store_color`, defaulting to native's `#614ed0`) and `content` holds the rendered
   notification labels (`config.fields`).
+- `store.name` and `store.support_email` live on the store (client) record, not in
+  `/settings/store`, so the app reads `/:clients/:self` for them. If that can't be read, `name`
+  falls back to the app's `from_name` and `support_email` to `reply_to`, so a subject like
+  `Welcome to {{ store.name }}` never renders blank.
+
+## Sender, Reply-To and BCC
+
+Each notification's own **From email** and **BCC emails** (Settings → Notifications → the
+email; fields `from` (or the deprecated `replyto`) and `bcc` on the `:notifications` record) are
+honoured, as are `cc` addresses set through the API:
+
+- A notification **From email on the same domain** as the app's `from_email` becomes the sender
+  (with `from_name` as its display name). Resend only sends from verified domains, and that's the
+  domain the merchant verified.
+- A notification **From email on any other domain** becomes the **Reply-To** instead, and the
+  app's `from_email` stays the sender. That's what Swell's default delivery does with it too:
+  native sends from its own address and puts the notification's From in Reply-To.
+- Otherwise the app's `from_email` and `reply_to` settings apply.
+- `bcc` / `cc` (comma separated) are sent as Resend `bcc` / `cc`.
 
 ## Code layout
 
@@ -102,26 +126,49 @@ list, add it to the relevant handler's `model.events` in `functions/*-emails.ts`
 | `functions/lib/dispatch.ts` | `handleEvent` + `dispatch`: match event → mappings (registry + custom), gate, route |
 | `functions/lib/registry.ts` | Default event→template mappings and event→model derivation |
 | `functions/lib/notify.ts` | Per-mapping send: config fetch (name + model) → record fetch → render → send |
-| `functions/lib/render.ts` | liquidjs engine, custom filters, context assembly |
-| `functions/lib/resend.ts` | Resend API client |
+| `functions/lib/render.ts` | liquidjs engine, custom filters, context assembly (`store`) |
+| `functions/lib/resend.ts` | Resend API client, sender / Reply-To resolution |
 | `settings/resend.json` | Dashboard settings schema |
 
 Adding a model means adding one thin `*-emails.ts` handler and registry rows — the dispatch,
 render, and send pipeline is shared.
 
-## Settings (Integrations → Resend)
+## Settings (Apps → Resend)
 
 `api_key` (required), `from_email` (required), `from_name`, `reply_to`, one toggle per mapping in
 the table above (`send_*`), and the **Custom notifications** collection (`custom_mappings`).
 
 ## Avoiding duplicate emails
 
-A built-in mapping only sends while the matching native notification is **disabled** in
-**Settings → Notifications**. Swell skips a notification whose `enabled` is `false` and sends it
-otherwise (`null` is the default, which is on), so the app checks the same field at send time and
-logs `skipped: Swell's native "<label>" email is still on` instead of sending a second copy.
-Switching a notification over is one step: turn the native one off. Custom mappings aren't
-checked — they name the merchant's own templates.
+A built-in mapping only sends while the matching native notification is **disabled**. Swell
+skips a notification whose `enabled` is `false` and sends it otherwise (`null` is the default,
+which is on; schema-api-server `api/admin/features/notifications/index.js`), so the app checks
+the same field at send time and logs `skipped: Swell's native "<label>" email is still on`
+instead of sending a second copy. Custom mappings aren't checked — they name the merchant's own
+templates.
+
+For most emails, switching over is one step: turn the native one off in **Settings →
+Notifications**. Two kinds of email work differently:
+
+- **Abandoned cart recovery.** Native sends `recovery.v2` only while the dashboard's
+  **Abandoned cart** switch is on, and that switch is `abandoned_cart.enabled` in
+  `/settings/notifications`, not the notification's own `enabled` (schema-api-server
+  `api/com/features/carts/abandoned.js`). The app treats native as on while that switch is on
+  and the notification isn't disabled, so the merchant turns off **Abandoned cart**. The
+  follow-up series hangs off the same switch, so it stops too.
+- **Shipping confirmation and Shipping update.** The dashboard has no switch for
+  `orders.shipped` or `orders.shipped-update` (swell-admin hardcodes `enabled: true` for them),
+  but native still honours `enabled: false` on the notification. Until it's set through the API,
+  the app skips both and says so in the log:
+
+  ```bash
+  # find the notification's id, then turn native off
+  GET /:notifications?where[model]=orders&where[name]=shipped.v2
+  PUT /:notifications/{id}   {"enabled": false}
+  ```
+
+  The dashboard keeps the value: saving Settings → Notifications writes back the `enabled`
+  value it read.
 
 Each send carries a Resend `Idempotency-Key` derived from the event, so a redelivered event returns
 the original email instead of sending another.
@@ -133,7 +180,12 @@ version knows exactly where the edges are.
 
 - **The admin's per-shipment "notify customer" checkbox isn't visible to apps.** Native passes it
   as `$notify` on the write, which never reaches the event payload. Once native `shipped.v2` is
-  off, the app sends a shipping confirmation for every shipment.
+  off, the app sends a shipping confirmation for every confirmed (non-draft) shipment.
+- **Shipping update follows the tracking number, not the checkbox.** Native sends
+  `shipped-update.v2` only when the admin ticks "Send email confirmation to customer" while
+  editing a fulfillment (unticked by default). The app can't see that, so it sends when an update
+  sets a tracking number, which is what the dashboard says the email is for.
+- **Turning native shipping emails off takes an API call.** See *Avoiding duplicate emails*.
 - **Welcome covers account creation only.** Native also welcomes a guest who later sets a
   password; the app subscribes to `account.created`, not updates.
 - **Only event-backed notifications are covered.** Notifications triggered by manual actions, record
@@ -158,8 +210,8 @@ version knows exactly where the edges are.
 ## Local development
 
 Credentials are **never** stored in the repo. The Resend API key and sender address live in the
-store's app settings (**Integrations → Resend**); `.swellrc` (the local store binding) and any
-`.env*` files are git-ignored. After cloning, link the app to your own store with the Swell CLI.
+store's app settings (**Apps → Resend**); any `.env*` files are git-ignored. `.swellrc` is
+committed on purpose: it pins the repo to the official app record (see `.gitignore`).
 
 ```bash
 npm install

@@ -24,9 +24,10 @@ every send lands in your Resend dashboard with its own delivery, bounce, and
 open data. You get Resend's deliverability tooling and logs without rebuilding
 your templates.
 
-> **Important:** a notification only sends through Resend once you turn off
-> Swell's own version of it in **Settings → Notifications**. Until then, Swell
-> keeps sending it and the app stays out of the way. See
+> **Important:** a notification only sends through Resend once Swell's own
+> version of it is off. Until then, Swell keeps sending it and the app stays
+> out of the way. Most are switched off in **Settings → Notifications**;
+> abandoned cart and the two shipping emails work differently. See
 > [Avoiding duplicate emails](#avoiding-duplicate-emails).
 
 ---
@@ -62,6 +63,18 @@ or misconfigured email.
 Your API key is stored in the app's settings on your store. It is never in the
 app's source code, and the app is open source so you can confirm that.
 
+### Per-email sender and BCC
+
+Each notification in **Settings → Notifications** has its own optional **From
+email** and **BCC emails**. The app uses them:
+
+- **From email on your verified domain** (the same domain as the app's From
+  Address): the email is sent from that address, with your From Name.
+- **From email on any other domain**: Resend would reject it, so the email is
+  sent from the app's From Address and that address becomes the **Reply-To**,
+  which is also what Swell does with it.
+- **BCC emails**: every address gets a blind copy.
+
 ---
 
 ## What it sends
@@ -74,7 +87,7 @@ own toggle, so you can move them over one at a time rather than all at once.
 | Order confirmation | `order.submitted` | `receipt.v2` | **On** |
 | Shipping confirmation | `shipment.created` | `shipped.v2` | **On** |
 | New subscription | `subscription.created` | `new.v2` | **On** |
-| Shipping update | `shipment.updated` | `shipped-update.v2` | Off |
+| Shipping update | `shipment.updated`, when a tracking number is set | `shipped-update.v2` | Off |
 | Order canceled | `order.canceled` | `canceled.v2` | Off |
 | Order refund | `payment.refund.succeeded` | `refund.v2` | Off |
 | Customer welcome | `account.created` | `welcome.v2` | Off |
@@ -124,7 +137,7 @@ Each row has:
 
 These six events are listenable but have **no** default mapping, so they exist
 specifically for custom rows: `order.paid`, `order.delivered`,
-`subscription.created`, `subscription.paid`, `subscription.trial_will_end`,
+`subscription.activated`, `subscription.paid`, `subscription.trial_will_end`,
 `subscription.trial_ended`.
 
 ### One rule that catches people out
@@ -172,12 +185,29 @@ routing requires a code change.
 ## Avoiding duplicate emails
 
 The app never sends a notification that Swell is also sending. Before each
-email, it checks whether Swell's own version is still on in
-**Settings → Notifications**. If it is, the app skips the email and logs why.
+email, it checks whether Swell's own version is still on. If it is, the app
+skips the email and logs why.
 
-So switching a notification to Resend is one step: **turn off Swell's version
-of it.** The app's toggle for it must also be on — three are on by default:
-order confirmation, shipping confirmation and new subscription.
+For most emails, switching to Resend is one step: **turn off Swell's version
+of it in Settings → Notifications.** The app's toggle for it must also be on —
+three are on by default: order confirmation, shipping confirmation and new
+subscription.
+
+Three emails are switched off differently:
+
+- **Abandoned cart recovery.** Turn off the **Abandoned cart** switch in
+  Settings → Notifications. That's the switch Swell checks before sending its
+  recovery email. Swell's follow-up emails (`recovery-1`, `recovery-2`) depend
+  on the same switch, so they stop too.
+- **Shipping confirmation and Shipping update.** Settings → Notifications has
+  no switch for these two, so Swell sends them whenever you tick "Send email
+  confirmation to customer" on a fulfillment. Until Swell's version is turned
+  off through the Swell API, the app skips them and logs why. To turn it off,
+  look up the notification with
+  `GET /:notifications?where[model]=orders&where[name]=shipped.v2` (or
+  `shipped-update.v2`) and set it with `PUT /:notifications/{id}` and
+  `{"enabled": false}`. Saving Settings → Notifications afterwards keeps it
+  off.
 
 **Recommended rollout:**
 
@@ -206,7 +236,13 @@ can decide whether they matter for your store.
 - **Shipping confirmations ignore the "notify customer" checkbox.** When you
   create a shipment in the dashboard, Swell doesn't pass that checkbox on to
   apps. Once Swell's own shipping confirmation is off, the app sends one for
-  every shipment.
+  every shipment that isn't a draft.
+- **Shipping updates follow the tracking number.** The app sends one when a
+  shipment's tracking number is set or changed, not on other edits. Swell's
+  own version sends when you tick the checkbox while editing a fulfillment,
+  which the app can't see.
+- **Abandoned cart recovery is the first email only.** Turning off Swell's
+  Abandoned cart switch also stops its follow-up emails.
 - **Welcome emails go out when an account is created.** A guest who later sets
   a password doesn't get one.
 - **Only event-backed notifications can be covered.** Anything triggered by a
@@ -223,8 +259,8 @@ can decide whether they matter for your store.
 - **Partial Liquid filter coverage.** Only `currency` and `img_url` are
   reimplemented. A template relying on another Swell-specific filter may not
   render identically.
-- **One recipient per email.** The app sends to the single contact address the
-  notification is configured for. No CC or BCC.
+- **One customer per email.** The app sends to the single contact address the
+  notification is configured for, plus the notification's BCC emails.
 
 ---
 
@@ -254,13 +290,16 @@ If no email arrived, find the matching line below.
 | `<event> has no "<field>", skipping <label>` | The event payload had no id at the expected path. For custom rows this is usually a wrong **Record ID field**. | Leave Record ID field blank to use `id`, or set the correct path. |
 | `custom mapping has unrecognized event "<event>"` | A custom row's event is not one the app knows. | Re-pick the event from the dropdown. |
 | `failed rendering field "<id>"` | A content label contains invalid Liquid. That label renders empty; the email still sends. | Fix the label in the notification's content fields. |
-| `skipped: Swell's native "<label>" email is still on` | Swell is still sending this notification itself, so the app didn't. | Turn it off in Settings → Notifications to send it through Resend. |
+| `skipped: Swell's native "<label>" email is still on` | Swell is still sending this notification itself, so the app didn't. | Turn it off as the rest of the line says: in Settings → Notifications, with the Abandoned cart switch, or through the API for the shipping emails. See [Avoiding duplicate emails](#avoiding-duplicate-emails). |
+| `skipped: shipment is a draft` | Swell doesn't send shipping emails for draft shipments either. | Nothing to fix. |
+| `skipped: tracking number did not change` | A shipment was edited without setting a tracking number, so there's no shipping update to send. | Nothing to fix. |
+| `skipped: cart has no customer account` / `cart is empty` | Swell only sends cart recovery to customers with an account and items in the cart. | Nothing to fix. |
 | `skipped: order is a draft` / `order has notify: false` | Swell wouldn't send a receipt for this order either. | Nothing to fix. |
 | `skipped: guest account (no password)` | Welcome emails only go to customers who created an account. | Nothing to fix. |
 | `skipped: subscription is not active` / `is canceled` | Swell's rules for this subscription email weren't met. | Nothing to fix. |
 | `skipped: nothing to invoice (grand_total is 0)` | Free invoices don't get an email, in Swell or here. | Nothing to fix. |
-| `Resend 401: …` | Resend rejected the API key. | Regenerate the key in Resend and confirm it has Sending access. |
-| `Resend 403: …` | Usually an unverified sender domain. | Verify the From Address domain in Resend. |
+| `Resend 401: …` | Resend received no API key. | Re-enter the API Key in the app settings. |
+| `Resend 403: …` | Resend refused the email. The message says why: an invalid, inactive or suspended API key, a sender domain that isn't verified, or a sending restriction on the account. | For a key problem, create a new key with Sending access in Resend. For a domain problem, verify the From Address domain (and any notification From email on it) in Resend. |
 | `Resend 422: …` | Resend rejected the payload, most often the `from` address. | Check the From Address is a valid address on a verified domain. |
 | `Resend 429: …` / `Resend 5xx: …` / `Resend unreachable` | A temporary Resend problem. | Nothing to fix — Swell retries the event. |
 
