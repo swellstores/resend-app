@@ -1,4 +1,4 @@
-import { sendEmail, type ResendSettings } from './resend';
+import { parseAddressList, sendEmail, type ResendSettings } from './resend';
 import { renderNotification, type NotificationConfig } from './render';
 import type { Mapping } from './registry';
 
@@ -71,7 +71,7 @@ export async function sendForMapping(
   }
   const extra = mapping.extraData ? await mapping.extraData(ctx) : {};
 
-  const email = await renderNotification(swell, reqStore, config, { ...record, ...extra });
+  const email = await renderNotification(swell, reqStore, settings, config, { ...record, ...extra });
   if (!email) {
     return;
   }
@@ -84,6 +84,10 @@ export async function sendForMapping(
     to: [email.to],
     subject: email.subject,
     html: email.html,
+    // The notification's own From email and BCC/CC emails, as native uses them
+    notificationFrom: config.from || config.replyto,
+    cc: parseAddressList(config.cc),
+    bcc: parseAddressList(config.bcc),
     idempotencyKey,
   });
   console.log(`Resend: ${mapping.label} -> ${email.to}`);

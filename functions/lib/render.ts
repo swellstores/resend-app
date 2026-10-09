@@ -1,6 +1,7 @@
 // Use the browser ESM build — the default Node build references `require`/`fs`,
 // which the Swell function isolate doesn't provide ("require is not defined").
 import { Liquid } from 'liquidjs/dist/liquid.browser.mjs';
+import type { ResendSettings } from './resend';
 
 type LocaleValues<T> = Record<string, Partial<T> | undefined>;
 
@@ -11,6 +12,12 @@ export interface NotificationConfig {
   enabled?: boolean | null;
   subject?: string;
   contact?: string; // dot path to recipient, e.g. "account.email"
+  // "From email" and "BCC emails" in the notification editor. `replyto` is the
+  // deprecated name for `from`; `cc` has no dashboard field but native sends it.
+  from?: string | null;
+  replyto?: string | null;
+  cc?: string | null;
+  bcc?: string | null; // comma separated
   fields?: Array<{
     id: string;
     value?: string;
@@ -110,20 +117,50 @@ function getByPath(record: any, path?: string): string | undefined {
   return value == null ? undefined : String(value);
 }
 
-// Build the `store` object the templates expect (name/url/logo/footer/support_email),
-// merging general store settings with the notification branding settings.
-async function buildStore(swell: SwellAPI, reqStore: SwellStore): Promise<Record<string, unknown>> {
-  const [storeSettings, notif] = await Promise.all([
+// Swell's default email accent when Branding has no primary color
+// (schema-api-server notifications feature, buildTemplateContext).
+const DEFAULT_STORE_COLOR = '#614ed0';
+
+// The store's name and support email live on the store (client) record, which
+// native merges into `store`. /settings/store doesn't hold them on most
+// stores, so read the client record too. Best effort: if it can't be read,
+// the template falls back to what /settings/store and the app settings have.
+async function fetchStoreDetails(swell: SwellAPI): Promise<{ name?: string; support_email?: string }> {
+  try {
+    const client = await swell.get('/:clients/:self');
+    return { name: client?.name || undefined, support_email: client?.support_email || undefined };
+  } catch {
+    return {};
+  }
+}
+
+// Build the `store` object the templates expect (name/url/logo/color/footer/
+// support_email), merging general store settings with the notification
+// branding settings, the same sources native reads.
+async function buildStore(
+  swell: SwellAPI,
+  reqStore: SwellStore,
+  settings: ResendSettings,
+): Promise<Record<string, unknown>> {
+  const [storeSettings, notif, details] = await Promise.all([
     swell.get('/settings/store').catch(() => ({})),
     swell.get('/settings/notifications').catch(() => ({})),
+    fetchStoreDetails(swell),
   ]);
+  const store = (storeSettings || {}) as Record<string, any>;
+  const branding = (notif || {}) as Record<string, any>;
 
   return {
-    ...(storeSettings || {}),
-    url: (storeSettings as any)?.url ?? reqStore?.url,
-    logo: (notif as any)?.store_logo,
-    logo_width: (notif as any)?.store_logo_width,
-    footer: (notif as any)?.store_footer,
+    ...store,
+    // Never render a blank store name (e.g. "Welcome to " in welcome.v2):
+    // fall back to the app's From Name, which merchants set to the store name.
+    name: store.name || details.name || settings.from_name || undefined,
+    support_email: store.support_email || details.support_email || settings.reply_to || undefined,
+    url: store.url ?? reqStore?.url,
+    logo: branding.store_logo,
+    logo_width: branding.store_logo_width,
+    color: branding.store_color || DEFAULT_STORE_COLOR,
+    footer: branding.store_footer,
   };
 }
 
@@ -153,6 +190,7 @@ async function renderFields(
 export async function renderNotification(
   swell: SwellAPI,
   reqStore: SwellStore,
+  settings: ResendSettings,
   config: NotificationConfig,
   record: any,
 ): Promise<RenderedEmail | null> {
@@ -169,7 +207,7 @@ export async function renderNotification(
   }
   const html = await tplRes.text();
 
-  const store = await buildStore(swell, reqStore);
+  const store = await buildStore(swell, reqStore, settings);
   const locale = recordLocale(record, config.contact);
   const baseContext = {
     ...record,
