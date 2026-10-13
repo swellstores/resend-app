@@ -186,6 +186,15 @@ async function renderFields(
   return content;
 }
 
+// Some of Swell's built-in templates (recovery.v2 and refund.v2 among them)
+// carry a development CDN host, http://cdn.swell.test, on every store until
+// the merchant edits them. That host doesn't resolve; the same path on
+// cdn.swell.store serves the same file. Native reads the file directly, so
+// only an app fetching by URL ever sees this.
+function templateUrl(url: string): string {
+  return url.replace(/^https?:\/\/cdn\.swell\.test\//, 'https://cdn.swell.store/');
+}
+
 // Fetch the template HTML, assemble the render context, and produce the email
 export async function renderNotification(
   swell: SwellAPI,
@@ -200,7 +209,7 @@ export async function renderNotification(
     return null;
   }
 
-  const tplRes = await fetch(url);
+  const tplRes = await fetch(templateUrl(url));
   if (!tplRes.ok) {
     console.error(`Resend: failed to fetch template "${config.name}" (${tplRes.status})`);
     return null;

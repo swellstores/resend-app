@@ -147,16 +147,14 @@ export const DEFAULT_MAPPINGS: Mapping[] = [
     event: 'account.created', templateName: 'welcome.v2', templateModel: 'accounts', recordModel: 'accounts', idFrom: 'id',
     settingKey: 'send_account_welcome', defaultOn: false, label: 'Customer welcome', replacesNative: true,
     // welcome.v2 only sends to accounts with a password, never to checkout
-    // guests. The password is never returned, but it can be queried on.
-    skip: async ({ swell, record }) => {
-      const res = await swell.get('/accounts', {
-        id: record.id,
-        password: { $exists: true },
-        fields: 'id',
-        limit: 1,
-      });
-      return res?.count > 0 ? null : 'guest account (no password)';
-    },
+    // guests. account.created carries the new record, password hash included,
+    // so the event answers it. A query on `password` doesn't: an app's API
+    // access can't see the field and always matches nothing, which skipped
+    // every welcome email as a guest.
+    skip: ({ event, record }) =>
+      event?.password || event?.$event?.data?.password || record.$isPasswordSet === true
+        ? null
+        : 'guest account (no password)',
   },
   // Carts
   {
