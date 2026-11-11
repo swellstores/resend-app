@@ -2,6 +2,15 @@
   "$schema": "https://json.swell.store/setting.json",
   "label": "Resend",
   "description": "Send branded transactional emails through Resend by reusing your store's notification templates. Each notification sends through Resend once Swell's own version of it is off: most in Settings → Notifications, abandoned cart with its Abandoned cart switch there, and the two shipping emails through the Swell API (see the app guide).",
+  "actions": [
+    {
+      "id": "test_connection",
+      "label": "Test connection",
+      "function": "test-connection",
+      "loading_label": "Testing…",
+      "hint": "Checks the API key and that the From Address domain is verified"
+    }
+  ],
   "fields": [
     {
       "id": "api_key",

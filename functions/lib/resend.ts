@@ -1,4 +1,4 @@
-const API_BASE = 'https://api.resend.com';
+export const API_BASE = 'https://api.resend.com';
 
 export interface ResendSettings {
   api_key?: string;
