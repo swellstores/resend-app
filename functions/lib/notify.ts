@@ -9,10 +9,13 @@ async function fetchNotificationConfig(
   swell: SwellAPI,
   name: string,
   model: string,
+  locale?: string,
 ): Promise<NotificationConfig | null> {
   const res = await swell.get('/:notifications', {
     where: { name, model },
     limit: 1,
+    // With a locale, the subject and fields come back translated
+    ...(locale ? { $locale: locale } : {}),
   });
   return res?.results?.[0] ?? null;
 }
@@ -73,7 +76,8 @@ export async function sendForMapping(
   let localizedConfig = config;
   if (locale) {
     const [configInLocale, recordInLocale] = await Promise.all([
-      config.id ? swell.get('/:notifications/{id}', { id: config.id, $locale: locale }) : null,
+      // Same query as above: inside a function, reading a notification by id returns nothing
+      fetchNotificationConfig(swell, mapping.templateName, mapping.templateModel, locale),
       swell.get(recordPath, { id: recordId, expand, $locale: locale }),
     ]);
     localizedConfig = configInLocale ?? config;

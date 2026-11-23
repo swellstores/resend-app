@@ -4,7 +4,6 @@ import { Liquid } from 'liquidjs/dist/liquid.browser.mjs';
 import type { ResendSettings } from './resend';
 
 export interface NotificationConfig {
-  id?: string;
   name: string;
   label?: string;
   // false = the merchant turned the native email off; null/undefined = on
