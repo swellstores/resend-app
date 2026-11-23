@@ -3,9 +3,8 @@
 import { Liquid } from 'liquidjs/dist/liquid.browser.mjs';
 import type { ResendSettings } from './resend';
 
-type LocaleValues<T> = Record<string, Partial<T> | undefined>;
-
 export interface NotificationConfig {
+  id?: string;
   name: string;
   label?: string;
   // false = the merchant turned the native email off; null/undefined = on
@@ -22,9 +21,7 @@ export interface NotificationConfig {
     id: string;
     value?: string;
     default?: string;
-    $locale?: LocaleValues<{ value: string }>;
   }>;
-  $locale?: LocaleValues<{ subject: string }>;
   query?: { expand?: string[] };
   content?: { html?: { url?: string } };
 }
@@ -65,7 +62,7 @@ engine.registerFilter('currency', function (this: any, value: unknown) {
 
 // The locale native picks for a notification: the contact's (the account on
 // most templates), then the record's own. Same order as schema-api-server.
-function recordLocale(record: any, contact?: string): string | undefined {
+export function recordLocale(record: any, contact?: string): string | undefined {
   const pointerPath = contact?.split('.').slice(0, -1).join('.');
   const pointer = pointerPath ? getPointer(record, pointerPath) : record;
   return (
@@ -79,13 +76,6 @@ function recordLocale(record: any, contact?: string): string | undefined {
 
 function getPointer(record: any, path: string): any {
   return path.split('.').reduce((acc, key) => (acc == null ? acc : acc[key]), record);
-}
-
-// Pick a merchant translation from a `$locale` map: exact locale, then language.
-function localized<T>(values: LocaleValues<T> | undefined, locale: string | undefined, key: keyof T) {
-  if (!values || !locale) return undefined;
-  const hit = values[locale]?.[key] ?? values[locale.split('-')[0]]?.[key];
-  return typeof hit === 'string' && hit.length > 0 ? hit : undefined;
 }
 
 // Resolve a usable image URL from the many shapes Swell passes to `img_url`
@@ -169,13 +159,12 @@ async function buildStore(
 async function renderFields(
   fields: NotificationConfig['fields'],
   baseContext: Record<string, unknown>,
-  locale: string | undefined,
 ): Promise<Record<string, string>> {
   const content: Record<string, string> = {};
   if (!fields?.length) return content;
 
   for (const field of fields) {
-    const template = localized(field.$locale, locale, 'value') ?? field.value ?? field.default ?? '';
+    const template = field.value ?? field.default ?? '';
     try {
       content[field.id] = await engine.parseAndRender(template, baseContext);
     } catch (err) {
@@ -195,13 +184,15 @@ function templateUrl(url: string): string {
   return url.replace(/^https?:\/\/cdn\.swell\.test\//, 'https://cdn.swell.store/');
 }
 
-// Fetch the template HTML, assemble the render context, and produce the email
+// Fetch the template HTML, assemble the render context, and produce the email.
+// `config` and `record` arrive already translated into `locale` (see notify.ts).
 export async function renderNotification(
   swell: SwellAPI,
   reqStore: SwellStore,
   settings: ResendSettings,
   config: NotificationConfig,
   record: any,
+  locale: string | undefined,
 ): Promise<RenderedEmail | null> {
   const url = config.content?.html?.url;
   if (!url) {
@@ -217,16 +208,15 @@ export async function renderNotification(
   const html = await tplRes.text();
 
   const store = await buildStore(swell, reqStore, settings);
-  const locale = recordLocale(record, config.contact);
   const baseContext = {
     ...record,
     currency: record.currency ?? record.account?.currency,
     store,
     $locale: locale,
   };
-  const content = await renderFields(config.fields, baseContext, locale);
+  const content = await renderFields(config.fields, baseContext);
   const context = { ...baseContext, content };
-  const subjectTemplate = localized(config.$locale, locale, 'subject') ?? config.subject ?? '';
+  const subjectTemplate = config.subject ?? '';
 
   const [subject, body] = await Promise.all([
     engine.parseAndRender(subjectTemplate, context),

@@ -1,5 +1,5 @@
 import { parseAddressList, sendEmail, type ResendSettings } from './resend';
-import { renderNotification, type NotificationConfig } from './render';
+import { recordLocale, renderNotification, type NotificationConfig } from './render';
 import type { Mapping } from './registry';
 
 // Fetch the live notification config (template + fields + expansions) from the
@@ -57,13 +57,30 @@ export async function sendForMapping(
 
   // Load the record with exactly the expansions the template was built for
   const expand = config.query?.expand ?? [];
-  const record = await swell.get(`/${mapping.recordModel}/{id}`, { id: recordId, expand });
+  const recordPath = `/${mapping.recordModel}/{id}`;
+  let record = await swell.get(recordPath, { id: recordId, expand });
   if (!record) {
     console.error(`Resend: ${mapping.recordModel} ${recordId} not found`);
     return;
   }
 
-  const ctx = { swell, event, record };
+  // Swell returns translations only when a request names a locale. The
+  // customer's locale is on the record, so read the notification and the
+  // record again with `$locale`, as native does: the subject, the fields and
+  // the product, variant and plan names then come back translated, with the
+  // store's own locale fallback applied.
+  const locale = recordLocale(record, config.contact);
+  let localizedConfig = config;
+  if (locale) {
+    const [configInLocale, recordInLocale] = await Promise.all([
+      config.id ? swell.get('/:notifications/{id}', { id: config.id, $locale: locale }) : null,
+      swell.get(recordPath, { id: recordId, expand, $locale: locale }),
+    ]);
+    localizedConfig = configInLocale ?? config;
+    record = recordInLocale ?? record;
+  }
+
+  const ctx = { swell, event, record, locale };
   const skipReason = mapping.skip ? await mapping.skip(ctx) : null;
   if (skipReason) {
     console.log(`Resend: ${mapping.label} skipped: ${skipReason}`);
@@ -71,7 +88,7 @@ export async function sendForMapping(
   }
   const extra = mapping.extraData ? await mapping.extraData(ctx) : {};
 
-  const email = await renderNotification(swell, reqStore, settings, config, { ...record, ...extra });
+  const email = await renderNotification(swell, reqStore, settings, localizedConfig, { ...record, ...extra }, locale);
   if (!email) {
     return;
   }

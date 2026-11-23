@@ -36,6 +36,8 @@ export interface MappingContext {
   swell: SwellAPI;
   event: SwellData;
   record: any;
+  // The customer's locale, so anything fetched for the template is translated too
+  locale?: string;
 }
 
 // Refunds as schema-api-server passes them to refund.v2 (payments feature,
@@ -52,23 +54,25 @@ async function orderRefunds({ swell, record }: MappingContext) {
 
 // shipped-update.v2 reads a top-level `shipment`; native passes the shipment
 // that triggered the email (orders feature, items.js).
-async function eventShipment({ swell, event }: MappingContext) {
+async function eventShipment({ swell, event, locale }: MappingContext) {
   if (!event?.id) return {};
   const shipment = await swell.get('/shipments/{id}', {
     id: event.id,
     expand: ['items.product', 'items.variant'],
+    ...(locale ? { $locale: locale } : {}),
   });
   return shipment ? { shipment } : {};
 }
 
 // invoice.v2 reads a top-level `invoice`; native passes the invoice it just
 // created (subscriptions feature, sendPaymentNotification).
-async function latestInvoice({ swell, record }: MappingContext) {
+async function latestInvoice({ swell, record, locale }: MappingContext) {
   const res = await swell.get('/invoices', {
     subscription_id: record.id,
     sort: 'date_created desc',
     limit: 1,
     expand: ['items.product', 'items.variant'],
+    ...(locale ? { $locale: locale } : {}),
   });
   const invoice = res?.results?.[0];
   return invoice ? { invoice } : {};
