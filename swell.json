@@ -1,5 +1,6 @@
 {
 	"description": "Send Swell email notifications through Resend",
+	"repository_url": "https://github.com/swellstores/resend-app",
 	"id": "resend",
 	"name": "Resend",
 	"type": "integration",
